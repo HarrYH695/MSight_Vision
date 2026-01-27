@@ -98,6 +98,6 @@ class YoloOneStageDetectionNode(DataProcessingNode):
         raw_sensor_data = None
         if self.include_sensor_data_in_result:
             raw_sensor_data = data
-        detection_result_data = DetectionResultsData(result, frame_id=data.frame_id, capture_timestamp=data.capture_timestamp, creation_timestamp=time.time(), sensor_name=sensor_name, raw_sensor_data=raw_sensor_data)
+        detection_result_data = DetectionResultsData(result, sensor_frame_id=data.frame_id, capture_timestamp=data.capture_timestamp, creation_timestamp=time.time(), sensor_name=sensor_name, raw_sensor_data=raw_sensor_data)
         # print(f"Detection results: {detection_result_data.to_dict()}")
         return detection_result_data
