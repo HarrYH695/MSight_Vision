@@ -35,7 +35,7 @@ class YoloOneStageDetectionNode(DataProcessingNode):
         self.confthre = self.det_config["model_config"]["confthre"]
         self.nmsthre = self.det_config["model_config"]["nmsthre"]
         self.class_agnostic_nms = self.det_config["model_config"]["class_agnostic_nms"]
-        self.logger.info(f"Initializing YoloOneStageDetectionNode with model path: {self.model_path}, no_warp: {self.no_warp}, warper_matrix_redis_prefix: {self.warper_matrix_redis_prefix}, confthre: {self.confthre}, nmsthre: {self.nmsthre}, class_agnostic_nms: {self.class_agnostic_nms}")
+        self.logger.info(f"Initializing YoloOneStageDetectionNode with model path: {self.model_path}, no_warp: {self.no_warp}, confthre: {self.confthre}, nmsthre: {self.nmsthre}, class_agnostic_nms: {self.class_agnostic_nms}")
         self.detector = YoloDetector(model_path=Path(self.model_path), device=device, confthre=self.confthre, nmsthre=self.nmsthre, fp16=False, class_agnostic_nms=self.class_agnostic_nms)
         loc_maps_path = self.det_config["loc_maps"]
         loc_maps = load_locmaps(loc_maps_path)
