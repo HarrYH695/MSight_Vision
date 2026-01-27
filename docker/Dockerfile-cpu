@@ -1,4 +1,4 @@
-FROM michigantrafficlab/msight-edge:v1.5.1-pytorch2.7.1-cpu
+FROM michigantrafficlab/msight-core:latest-pytorch2.7.1-cpu
 
 # Install build tools and rsync
 RUN apt-get update && \

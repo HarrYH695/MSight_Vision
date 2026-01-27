@@ -1,5 +1,5 @@
 from numpy import ndarray
-from msight_det2d.base import DetectionResult2D, DetectedObject2D
+from msight_vision.base import DetectionResult2D, DetectedObject2D
 from .base import ImageDetector2DBase
 from ultralytics import YOLO
 from pathlib import Path
