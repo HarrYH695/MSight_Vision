@@ -114,9 +114,11 @@ class KalmanBoxTracker(object):
     """
     count = 0
 
-    def __init__(self, bbox):
+    def __init__(self, bbox, category=0):
         """
         Initialises a tracker using initial bounding box.
+        :param bbox: initial bounding box [x1, y1, x2, y2, score]
+        :param category: object category/class id
         """
         # define constant velocity model
         self.kf = KalmanFilter(dim_x=4, dim_z=2)
@@ -166,16 +168,24 @@ class KalmanBoxTracker(object):
         self.dlpred_box = np.zeros(4)
         self.dlpred_boxes = None
         self.dlpred_age = 0
+        self.category = category  # Store object category
+        self.last_confidence = bbox[4] if len(bbox) > 4 else 1.0  # Store last confidence
 
-    def update(self, bbox):
+    def update(self, bbox, category=None):
         """
         Updates the state vector with observed bbox.
+        :param bbox: observed bounding box
+        :param category: object category (optional, updates stored category if provided)
         """
         self.time_since_update = 0
         self.history = []
         self.hits += 1
         self.hit_streak += 1
         self.kf.update(convert_bbox_to_z(bbox))
+        if category is not None:
+            self.category = category
+        if len(bbox) > 4:
+            self.last_confidence = bbox[4]
 
     def update_pred(self, vehicle):
         self.dlpred_boxes = vpred2bbox(vehicle)
@@ -283,15 +293,19 @@ class Sort(object):
         self.curr_matched = []
         self.iou_type = iou_type
 
-    def update(self, dets=np.empty((0, 5)), vehicle_list = None):
+    def update(self, dets=np.empty((0, 5)), categories=None, vehicle_list=None):
         """
         Params:
           dets - a numpy array of detections in the format [[x1,y1,x2,y2,score],[x1,y1,x2,y2,score],...]
+          categories - list of category ids corresponding to each detection
         Requires: this method must be called once for each frame even with empty detections (use np.empty((0, 5)) for frames without detections).
         Returns the a similar array, where the last column is the object ID.
 
         NOTE: The number of objects returned may differ from the number of detections provided.
         """
+        if categories is None:
+            categories = [0] * len(dets)
+        
         self.frame_count += 1
         # get predicted locations from existing trackers.
         trks = np.zeros((len(self.trackers), 5))
@@ -313,11 +327,11 @@ class Sort(object):
 
         # update matched trackers with assigned detections
         for m in matched:
-            self.trackers[m[1]].update(dets[m[0], :])
+            self.trackers[m[1]].update(dets[m[0], :], categories[m[0]])
 
         # create and initialise new trackers for unmatched detections
         for i in unmatched_dets:
-            trk = KalmanBoxTracker(dets[i, :])
+            trk = KalmanBoxTracker(dets[i, :], category=categories[i])
             self.trackers.append(trk)
         i = len(self.trackers)
         for trk in reversed(self.trackers):
@@ -352,9 +366,10 @@ class Sort(object):
 def vlist2bbox(vehicle_list, r=4):
 
     if len(vehicle_list) == 0:
-        return np.empty([0, 5])
+        return np.empty([0, 5]), []
 
     bboxes = []
+    categories = []
     for i in range(len(vehicle_list)):
         v = vehicle_list[i]
         v.traj_id = "-1"
@@ -362,8 +377,9 @@ def vlist2bbox(vehicle_list, r=4):
         bbox = [realworld_x_norm-r, realworld_y_norm-r,
                 realworld_x_norm+r, realworld_y_norm+r, v.confidence]
         bboxes.append(bbox)
+        categories.append(v.category if hasattr(v, 'category') else 0)
 
-    return np.array(bboxes)
+    return np.array(bboxes), categories
 
 
 def update_vlist(bbs, updated_bbs, id, uuid, vehicle_list):
@@ -416,17 +432,94 @@ def remove_untracked_vehicles(vehicle_list):
 #         self.tracker.update_pred(vehicle_list)
 
 class SortTracker(TrackerBase):
-    def __init__(self, max_age=3, min_hits=1, iou_threshold=0.01, iou_type='iou'):
+    def __init__(self, max_age=3, min_hits=1, iou_threshold=0.01, iou_type='iou', use_filtered_position=False, output_predicted=False):
         """
         Sets key parameters for SORT
+        :param max_age: Maximum number of frames to keep a track without detection
+        :param min_hits: Minimum number of hits before a track is confirmed
+        :param iou_threshold: IOU threshold for matching
+        :param iou_type: Type of IOU to use ('iou' or 'l2distance')
+        :param use_filtered_position: If True, use Kalman filter's refined position instead of raw detection
+        :param output_predicted: If True, output predicted positions for temporarily missing objects
         """
         self.tracker = Sort(max_age=max_age, min_hits=min_hits, iou_threshold=iou_threshold, iou_type=iou_type)
+        self.use_filtered_position = use_filtered_position
+        self.output_predicted = output_predicted
     
     def track(self, object_list):
-        bbs = vlist2bbox(object_list)
+        bbs, categories = vlist2bbox(object_list)
         # print(bbs)
-        updated_bbs, id, uuid = self.tracker.update(bbs)
+        updated_bbs, id, uuid = self.tracker.update(bbs, categories)
         object_list = update_vlist(bbs, updated_bbs, id, uuid, object_list)
         object_list = remove_untracked_vehicles(object_list)
+        
+        if self.use_filtered_position:
+            # Update object positions using Kalman filter's refined estimate
+            object_list = self._apply_filtered_positions(object_list)
+        
+        if self.output_predicted:
+            # Add predicted objects for temporarily missing tracks
+            predicted_objects = self._get_predicted_objects(object_list)
+            object_list.extend(predicted_objects)
+        
         return object_list
+    
+    def _apply_filtered_positions(self, object_list):
+        """
+        Update object positions using Kalman filter's refined estimate.
+        :param object_list: list of tracked objects
+        :return: object list with refined positions
+        """
+        for obj in object_list:
+            # Find the corresponding tracker by uuid
+            for tracker in self.tracker.trackers:
+                if tracker.uuid == obj._uuid:
+                    # Get the filtered state from Kalman filter
+                    state = tracker.kf.x
+                    filtered_x = state[0, 0]
+                    filtered_y = state[1, 0]
+                    # Convert back to lat/lon
+                    lat, lon = coord_unnormalization(filtered_x, filtered_y)
+                    obj.x = lat
+                    obj.y = lon
+                    break
+        return object_list
+    
+    def _get_predicted_objects(self, object_list):
+        """
+        Create objects for temporarily missing tracks using predicted positions.
+        :param object_list: list of currently tracked objects
+        :return: list of predicted objects for missing tracks
+        """
+        from msight_base import RoadUserPoint  # Import here to avoid circular imports
+        
+        # Get UUIDs of currently matched objects
+        matched_uuids = {obj._uuid for obj in object_list if hasattr(obj, '_uuid') and obj._uuid}
+        
+        predicted_objects = []
+        for tracker in self.tracker.trackers:
+            # Check if this tracker is not in the current output but still alive
+            if tracker.uuid not in matched_uuids:
+                # Only output if track was previously confirmed (has enough hits)
+                if tracker.hits >= self.tracker.min_hits:
+                    # Get predicted state from Kalman filter
+                    state = tracker.kf.x
+                    predicted_x = state[0, 0]
+                    predicted_y = state[1, 0]
+                    # Convert back to lat/lon
+                    lat, lon = coord_unnormalization(predicted_x, predicted_y)
+                    
+                    # Create a predicted object with stored category and reduced confidence
+                    predicted_obj = RoadUserPoint(
+                        x=lat,
+                        y=lon,
+                        category=tracker.category,
+                        confidence=tracker.last_confidence * 0.5,  # Reduce confidence for predicted
+                    )
+                    predicted_obj.traj_id = str(tracker.id + 1)
+                    predicted_obj._uuid = tracker.uuid
+                    predicted_obj.is_predicted = True  # Mark as predicted
+                    predicted_objects.append(predicted_obj)
+        
+        return predicted_objects
     

@@ -1,5 +1,5 @@
 from importlib.metadata import version
-from .detector_yolo import YoloDetector
+from .detector_yolo import YoloDetector, Yolo26Detector
 from .localizer import HashLocalizer
 from .tracker import SortTracker
 from .warper import ClassicWarper, ClassicWarperWithExternalUpdate

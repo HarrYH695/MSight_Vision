@@ -69,3 +69,19 @@ class YoloDetector(ImageDetector2DBase):
             sensor_type,
         )
         return detection_result
+    
+class Yolo26Detector(YoloDetector):
+    """YOLOv2.6 detector for 2D images."""
+    def __init__(self, model_path: Path, device: str = "cpu", confthre: float = 0.25, nmsthre: float = 0.45, fp16: bool = False, class_agnostic_nms: bool = False, end2end: bool = False):
+        super().__init__(model_path, device, confthre, nmsthre, fp16, class_agnostic_nms)
+
+        self.end2end = end2end
+    def detect(self, image: ndarray, timestamp, sensor_type) -> DetectionResult2D:
+        yolo_output_results = self.model(image, device=self.device, conf=self.confthre, iou=self.nmsthre, half=self.fp16, verbose=False, agnostic_nms=self.class_agnostic_nms, end2end=self.end2end)
+        ## Convert results to DetectionResult2D
+        detection_result = self.convert_yolo_result_to_detection_result(
+            yolo_output_results,
+            timestamp,
+            sensor_type,
+        )
+        return detection_result
