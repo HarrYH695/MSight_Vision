@@ -46,7 +46,7 @@ class YoloDetector(ImageDetector2DBase):
             # print(class_id)
             detected_object = DetectedObject2D(
                 box=[float(box[0]), float(box[1]), float(box[2]), float(box[3])],
-                class_id=1,
+                class_id=class_id,
                 score=score,
                 pixel_bottom_center=[center_x, center_y],
             )

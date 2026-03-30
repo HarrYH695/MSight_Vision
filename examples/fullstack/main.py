@@ -10,7 +10,7 @@ import cv2
 import torch
 from utils import plot_2d_detection_results, load_locmaps, is_number
 import yaml
-from msight_core.visualizer import Visualizer
+from msight_base.visualizer import Visualizer
 
 argparser = argparse.ArgumentParser(description="roundabout perception example")
 argparser.add_argument("-c", "--config", type=Path, required=True, help="config file path")
