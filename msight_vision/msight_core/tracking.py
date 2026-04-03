@@ -15,11 +15,11 @@ class SortTrackerNode(DataProcessingNode):
         self.config_file_path = Path(tracking_configs_path)
         with open(self.config_file_path, "r") as f:
             self.tracking_configs = yaml.safe_load(f)
-        self.max_age = self.tracking_configs.get("max_age", 3)
-        self.min_hits = self.tracking_configs.get("min_hits", 1)
-        self.iou_threshold = self.tracking_configs.get("iou_threshold", 0.01)
-        self.use_filtered_position = self.tracking_configs.get("use_filtered_position", False)
-        self.output_predicted = self.tracking_configs.get("output_predicted", False)
+        self.max_age = self.tracking_configs['tracker_config'].get("max_age", 3)
+        self.min_hits = self.tracking_configs['tracker_config'].get("min_hits", 1)
+        self.iou_threshold = self.tracking_configs['tracker_config'].get("iou_threshold", 0.01)
+        self.use_filtered_position = self.tracking_configs['tracker_config'].get("use_filtered_position", False)
+        self.output_predicted = self.tracking_configs['tracker_config'].get("output_predicted", False)
         self.tracker = SortTracker(
             max_age=self.max_age, 
             min_hits=self.min_hits, 
