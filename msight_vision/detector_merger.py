@@ -2,15 +2,16 @@ from pathlib import Path
 from typing import List, Type, Dict, Any, Optional, Set
 from msight_vision.base import DetectionResult2D
 from .base import ImageDetector2DBase
-from .detector_yolo import YoloDetector, Yolo26Detector, Yolo26OBBDetector
+from .detector_yolo import YoloDetector, Yolo26Detector, Yolo26OBBDetector, Yolo26OBBPedestrianDetector
 from numpy import ndarray
-
+import inspect
 
 # Registry of available detector classes
 DETECTOR_REGISTRY: Dict[str, Type[ImageDetector2DBase]] = {
     "YoloDetector": YoloDetector,
     "Yolo26Detector": Yolo26Detector,
     "Yolo26OBBDetector": Yolo26OBBDetector,
+    "Yolo26OBBPedestrianDetector": Yolo26OBBPedestrianDetector,
 }
 
 class MergedDetector(ImageDetector2DBase):
@@ -29,6 +30,7 @@ class MergedDetector(ImageDetector2DBase):
         super().__init__()
         self.detectors: List[ImageDetector2DBase] = []
         self.class_id_filters: List[Optional[Set[int]]] = []
+        self._detector_extra_params: List[Set[str]] = []
         seen_class_ids: Dict[int, str] = {}
 
         for det_cfg in model_config:
@@ -46,7 +48,14 @@ class MergedDetector(ImageDetector2DBase):
                     params["model_path"] = Path(params.pop(key))
 
             print(params)
-            self.detectors.append(det_cls(**params))
+            detector = det_cls(**params)
+            self.detectors.append(detector)
+
+            # Cache which extra kwargs this detector's detect() accepts
+            sig = inspect.signature(detector.detect)
+            base_params = {"self", "image", "timestamp", "sensor_type"}
+            extra = set(sig.parameters.keys()) - base_params
+            self._detector_extra_params.append(extra)
 
             # class_ids handling and conflict check
             raw_ids = det_cfg.get("class_ids", None)
@@ -65,11 +74,13 @@ class MergedDetector(ImageDetector2DBase):
                     seen_class_ids[cid] = det_type
                 self.class_id_filters.append(set(raw_ids))
 
-    def detect(self, image: ndarray, timestamp, sensor_type) -> DetectionResult2D:
+    def detect(self, image: ndarray, timestamp, sensor_type, **kwargs) -> DetectionResult2D:
         all_detected_objects = []
 
-        for detector, allowed_ids in zip(self.detectors, self.class_id_filters):
-            result = detector.detect(image, timestamp, sensor_type)
+        for detector, allowed_ids, extra_params in zip(self.detectors, self.class_id_filters, self._detector_extra_params):
+            # Filter kwargs to only include those accepted by this detector
+            filtered_kwargs = {k: v for k, v in kwargs.items() if k in extra_params}
+            result = detector.detect(image, timestamp, sensor_type, **filtered_kwargs)
 
             for obj in result.object_list:
                 if allowed_ids is None or obj.class_id in allowed_ids:
