@@ -1,5 +1,5 @@
 from importlib.metadata import version
-from .detector_yolo import YoloDetector, Yolo26Detector, Yolo26OBBDetector
+from .detector_yolo import YoloDetector, Yolo26Detector, Yolo26OBBDetector, Yolo26OBBPedestrianDetector
 from .detector_merger import MergedDetector
 from .localizer import HashLocalizer
 from .tracker import SortTracker

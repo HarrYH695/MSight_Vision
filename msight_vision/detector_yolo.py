@@ -1,8 +1,10 @@
 from numpy import ndarray
+import numpy as np
 from msight_vision.base import DetectionResult2D, DetectedObject2D
 from .base import ImageDetector2DBase
 from ultralytics import YOLO
 from pathlib import Path
+from typing import Dict, List
 
 class YoloDetector(ImageDetector2DBase):
     """YOLOv5 detector for 2D images."""
@@ -139,3 +141,80 @@ class Yolo26OBBDetector(Yolo26Detector):
             sensor_type,
         )
         return detection_result
+
+class Yolo26OBBPedestrianDetector(Yolo26OBBDetector):
+    """YOLOv2.6 OBB pedestrian detector for 2D images."""
+    def __init__(self, model_path: Path, camera_center: Dict[str, List[int]], device: str = "cpu", confthre: float = 0.25, nmsthre: float = 0.45, fp16: bool = False, class_agnostic_nms: bool = False, end2end: bool = False):
+        super().__init__(model_path, device, confthre, nmsthre, fp16, class_agnostic_nms, end2end)
+
+        self.camera_center = camera_center
+    def convert_yolo_result_to_detection_result(self, yolo_output_results, timestamp, sensor_type, sensor_name):
+        """
+        Convert YOLO output results to DetectionResult2D.
+        :param yolo_output_results: YOLO output results
+        :param timestamp: timestamp of the image
+        :param sensor_type: type of the sensor
+        :return: DetectionResult2D instance
+        """
+        # Convert YOLO output to DetectionResult2D
+        bboxes = yolo_output_results[0].obb.xyxyxyxy.cpu().numpy()
+        confs = yolo_output_results[0].obb.conf.cpu().numpy()
+        
+        detected_objects = []
+        for i in range(len(bboxes)):
+            box = bboxes[i]
+            score = float(confs[i])
+            # calculate the bottom point of the pedestrian
+            center = self.predict_bottom_from_obb_box(box, tuple(self.camera_center[sensor_name]))
+            center_x = float(center[0])
+            center_y = float(center[1])
+
+            detected_object = DetectedObject2D(
+                box=[float(box[0][0]), float(box[0][1]), float(box[1][0]), float(box[1][1]), float(box[2][0]), float(box[2][1]), float(box[3][0]), float(box[3][1])],
+                class_id=4,
+                score=score,
+                pixel_bottom_center=[center_x, center_y],
+            )
+            detected_objects.append(detected_object)
+        
+        detection_result = DetectionResult2D(
+            detected_objects,
+            timestamp,
+            sensor_type,
+        )
+        
+        return detection_result
+    
+    def detect(self, image: ndarray, timestamp, sensor_type, sensor_name) -> DetectionResult2D:
+        yolo_output_results = self.model(image, device=self.device, conf=self.confthre, iou=self.nmsthre, half=self.fp16, verbose=False, agnostic_nms=self.class_agnostic_nms, end2end=self.end2end)
+        ## Convert results to DetectionResult2D
+        detection_result = self.convert_yolo_result_to_detection_result(
+            yolo_output_results,
+            timestamp,
+            sensor_type,
+            sensor_name
+        )
+        return detection_result
+    
+    def predict_bottom_from_obb_box(self, corners: ndarray, image_center: tuple[int, int]) -> np.ndarray:
+        """Return the pedestrian bottom-center (x, y) given a pedestrian OBB.
+        :param corners: The four OBB vertices, ordered around the rectangle.
+        :param image_center: (cx, cy) of the source image.
+
+        :return: The bottom-center (x, y) in image coordinates.
+        """
+        pts = np.asarray(corners, dtype=np.float64).reshape(4, 2)
+
+        edge_vecs = np.stack([pts[(i + 1) % 4] - pts[i] for i in range(4)])
+        edge_lens = np.linalg.norm(edge_vecs, axis=1)
+        edge_mids = np.stack([(pts[(i + 1) % 4] + pts[i]) / 2.0 for i in range(4)])
+
+        # Edges 0 & 2 are parallel; edges 1 & 3 are parallel. Pick the shorter pair.
+        short_idx = (0, 2) if (edge_lens[0] + edge_lens[2]) < (edge_lens[1] + edge_lens[3]) else (1, 3)
+
+        c = np.asarray(image_center, dtype=np.float64)
+        d0 = np.linalg.norm(edge_mids[short_idx[0]] - c)
+        d1 = np.linalg.norm(edge_mids[short_idx[1]] - c)
+        foot_edge_idx = short_idx[0] if d0 < d1 else short_idx[1]
+
+        return edge_mids[foot_edge_idx]

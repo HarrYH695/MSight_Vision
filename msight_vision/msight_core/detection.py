@@ -84,7 +84,7 @@ class YoloOneStageDetectionNode(DataProcessingNode):
         # cv2.imshow("image", image)
         # cv2.waitKey(1)
         # print(image.shape)
-        result = self.detector.detect(image, timestamp, self.sensor_type)
+        result = self.detector.detect(image, timestamp, self.sensor_type, sensor_name=sensor_name)
         localizer = self.localizers[sensor_name]
         localizer.localize(result)
         self.logger.info(f"Detection completed in {time.time() - start:.2f} seconds for sensor: {sensor_name}")
