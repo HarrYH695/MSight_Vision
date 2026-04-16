@@ -9,7 +9,7 @@ from typing import Dict, List
 class YoloDetector(ImageDetector2DBase):
     """YOLOv5 detector for 2D images."""
 
-    def __init__(self, model_path: Path, device: str = "cpu", confthre: float = 0.25, nmsthre: float = 0.45, fp16: bool = False, class_agnostic_nms: bool = False):
+    def __init__(self, model_path: Path, device: str = "cpu", confthre: float = 0.25, nmsthre: float = 0.45, fp16: bool = False, class_agnostic_nms: bool = False, mask_path: Dict[str, Path] = None):
         """
         Initialize the YOLO detector.
         :param model_path: path to the YOLO model
@@ -22,7 +22,7 @@ class YoloDetector(ImageDetector2DBase):
         self.nmsthre = nmsthre
         self.fp16 = fp16
         self.class_agnostic_nms = class_agnostic_nms
-        
+        self.mask = {key: np.load(item).astype(bool) for key, item in mask_path.items()} if mask_path is not None else None
 
     def convert_yolo_result_to_detection_result(self, yolo_output_results, timestamp, sensor_type):
         """
@@ -62,7 +62,14 @@ class YoloDetector(ImageDetector2DBase):
         
         return detection_result
     
-    def detect(self, image: ndarray, timestamp, sensor_type) -> DetectionResult2D:
+    def detect(self, image: ndarray, timestamp, sensor_type, sensor_name) -> DetectionResult2D:
+        if self.mask is not None and sensor_name in self.mask:
+            if self.mask[sensor_name].shape[:2] != image.shape[:2]:
+                raise ValueError(
+                    f"Mask dimensions {self.mask[sensor_name].shape[:2]} do not match image dimensions {image.shape[:2]}"
+                )
+            else:
+                image = image * self.mask[sensor_name][:, :, np.newaxis]
         yolo_output_results = self.model(image, device=self.device, conf=self.confthre, iou=self.nmsthre, half=self.fp16, verbose=False, agnostic_nms=self.class_agnostic_nms)
         ## Convert results to DetectionResult2D
         detection_result = self.convert_yolo_result_to_detection_result(
@@ -74,11 +81,18 @@ class YoloDetector(ImageDetector2DBase):
     
 class Yolo26Detector(YoloDetector):
     """YOLOv2.6 detector for 2D images."""
-    def __init__(self, model_path: Path, device: str = "cpu", confthre: float = 0.25, nmsthre: float = 0.45, fp16: bool = False, class_agnostic_nms: bool = False, end2end: bool = False):
-        super().__init__(model_path, device, confthre, nmsthre, fp16, class_agnostic_nms)
+    def __init__(self, model_path: Path, device: str = "cpu", confthre: float = 0.25, nmsthre: float = 0.45, fp16: bool = False, class_agnostic_nms: bool = False, mask_path: Dict[str, Path] = None, end2end: bool = False):
+        super().__init__(model_path, device, confthre, nmsthre, fp16, class_agnostic_nms, mask_path)
 
         self.end2end = end2end
-    def detect(self, image: ndarray, timestamp, sensor_type) -> DetectionResult2D:
+    def detect(self, image: ndarray, timestamp, sensor_type, sensor_name) -> DetectionResult2D:
+        if self.mask is not None and sensor_name in self.mask:
+            if self.mask[sensor_name].shape[:2] != image.shape[:2]:
+                raise ValueError(
+                    f"Mask dimensions {self.mask[sensor_name].shape[:2]} do not match image dimensions {image.shape[:2]}"
+                )
+            else:
+                image = image * self.mask[sensor_name][:, :, np.newaxis]
         yolo_output_results = self.model(image, device=self.device, conf=self.confthre, iou=self.nmsthre, half=self.fp16, verbose=False, agnostic_nms=self.class_agnostic_nms, end2end=self.end2end)
         ## Convert results to DetectionResult2D
         detection_result = self.convert_yolo_result_to_detection_result(
@@ -90,8 +104,8 @@ class Yolo26Detector(YoloDetector):
 
 class Yolo26OBBDetector(Yolo26Detector):
     """YOLOv2.6 OBB detector for 2D images."""
-    def __init__(self, model_path: Path, device: str = "cpu", confthre: float = 0.25, nmsthre: float = 0.45, fp16: bool = False, class_agnostic_nms: bool = False, end2end: bool = False):
-        super().__init__(model_path, device, confthre, nmsthre, fp16, class_agnostic_nms, end2end)
+    def __init__(self, model_path: Path, device: str = "cpu", confthre: float = 0.25, nmsthre: float = 0.45, fp16: bool = False, class_agnostic_nms: bool = False, mask_path: Dict[str, Path] = None, end2end: bool = False):
+        super().__init__(model_path, device, confthre, nmsthre, fp16, class_agnostic_nms, mask_path, end2end)
 
     def convert_yolo_result_to_detection_result(self, yolo_output_results, timestamp, sensor_type):
         """
@@ -131,21 +145,11 @@ class Yolo26OBBDetector(Yolo26Detector):
         )
         
         return detection_result
-    
-    def detect(self, image: ndarray, timestamp, sensor_type) -> DetectionResult2D:
-        yolo_output_results = self.model(image, device=self.device, conf=self.confthre, iou=self.nmsthre, half=self.fp16, verbose=False, agnostic_nms=self.class_agnostic_nms, end2end=self.end2end)
-        ## Convert results to DetectionResult2D
-        detection_result = self.convert_yolo_result_to_detection_result(
-            yolo_output_results,
-            timestamp,
-            sensor_type,
-        )
-        return detection_result
 
 class Yolo26OBBPedestrianDetector(Yolo26OBBDetector):
     """YOLOv2.6 OBB pedestrian detector for 2D images."""
-    def __init__(self, model_path: Path, camera_center: Dict[str, List[int]], device: str = "cpu", confthre: float = 0.25, nmsthre: float = 0.45, fp16: bool = False, class_agnostic_nms: bool = False, end2end: bool = False):
-        super().__init__(model_path, device, confthre, nmsthre, fp16, class_agnostic_nms, end2end)
+    def __init__(self, model_path: Path, camera_center: Dict[str, List[int]], device: str = "cpu", confthre: float = 0.25, nmsthre: float = 0.45, fp16: bool = False, class_agnostic_nms: bool = False, mask_path: Dict[str, Path] = None, end2end: bool = False):
+        super().__init__(model_path, device, confthre, nmsthre, fp16, class_agnostic_nms, mask_path, end2end)
 
         self.camera_center = camera_center
     def convert_yolo_result_to_detection_result(self, yolo_output_results, timestamp, sensor_type, sensor_name):
@@ -154,6 +158,7 @@ class Yolo26OBBPedestrianDetector(Yolo26OBBDetector):
         :param yolo_output_results: YOLO output results
         :param timestamp: timestamp of the image
         :param sensor_type: type of the sensor
+        :param sensor_name: name of the sensor
         :return: DetectionResult2D instance
         """
         # Convert YOLO output to DetectionResult2D
@@ -186,6 +191,13 @@ class Yolo26OBBPedestrianDetector(Yolo26OBBDetector):
         return detection_result
     
     def detect(self, image: ndarray, timestamp, sensor_type, sensor_name) -> DetectionResult2D:
+        if self.mask is not None and sensor_name in self.mask:
+            if self.mask[sensor_name].shape[:2] != image.shape[:2]:
+                raise ValueError(
+                    f"Mask dimensions {self.mask[sensor_name].shape[:2]} do not match image dimensions {image.shape[:2]}"
+                )
+            else:
+                image = image * self.mask[sensor_name][:, :, np.newaxis]
         yolo_output_results = self.model(image, device=self.device, conf=self.confthre, iou=self.nmsthre, half=self.fp16, verbose=False, agnostic_nms=self.class_agnostic_nms, end2end=self.end2end)
         ## Convert results to DetectionResult2D
         detection_result = self.convert_yolo_result_to_detection_result(
@@ -196,25 +208,43 @@ class Yolo26OBBPedestrianDetector(Yolo26OBBDetector):
         )
         return detection_result
     
-    def predict_bottom_from_obb_box(self, corners: ndarray, image_center: tuple[int, int]) -> np.ndarray:
+    def predict_bottom_from_obb_box(self, corners: ndarray, image_center: tuple[int, int]) -> List[float]:
         """Return the pedestrian bottom-center (x, y) given a pedestrian OBB.
         :param corners: The four OBB vertices, ordered around the rectangle.
         :param image_center: (cx, cy) of the source image.
 
         :return: The bottom-center (x, y) in image coordinates.
         """
-        pts = np.asarray(corners, dtype=np.float64).reshape(4, 2)
+        center = corners.mean(axis=0)
+        direction = np.array([image_center[0] - center[0],
+                              image_center[1] - center[1]], dtype=np.float64)
+        norm = float(np.linalg.norm(direction))
+        if norm < 1e-9:
+            return [float(center[0]), float(center[1])]
+        direction /= norm
 
-        edge_vecs = np.stack([pts[(i + 1) % 4] - pts[i] for i in range(4)])
-        edge_lens = np.linalg.norm(edge_vecs, axis=1)
-        edge_mids = np.stack([(pts[(i + 1) % 4] + pts[i]) / 2.0 for i in range(4)])
+        s_best = np.inf
+        for i in range(4):
+            a = corners[i].astype(np.float64)
+            b = corners[(i + 1) % 4].astype(np.float64)
+            s = self._ray_segment_intersect(center, direction, a, b)
+            if s < s_best:
+                s_best = s
 
-        # Edges 0 & 2 are parallel; edges 1 & 3 are parallel. Pick the shorter pair.
-        short_idx = (0, 2) if (edge_lens[0] + edge_lens[2]) < (edge_lens[1] + edge_lens[3]) else (1, 3)
+        if not np.isfinite(s_best):
+            return [float(center[0]), float(center[1])]
 
-        c = np.asarray(image_center, dtype=np.float64)
-        d0 = np.linalg.norm(edge_mids[short_idx[0]] - c)
-        d1 = np.linalg.norm(edge_mids[short_idx[1]] - c)
-        foot_edge_idx = short_idx[0] if d0 < d1 else short_idx[1]
-
-        return edge_mids[foot_edge_idx]
+        hit = center + s_best * direction
+        return [float(hit[0]), float(hit[1])]
+    
+    def _ray_segment_intersect(self, origin: np.ndarray, direction: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
+        e = b - a
+        denom = direction[0] * e[1] - direction[1] * e[0]   
+        if abs(denom) < 1e-12:
+            return np.inf                                   
+        diff = a - origin
+        s = (diff[0] * e[1] - diff[1] * e[0]) / denom      
+        t = (diff[0] * direction[1] - diff[1] * direction[0]) / denom
+        if s < -1e-9 or t < -1e-9 or t > 1 + 1e-9:
+            return np.inf
+        return max(s, 0.0)

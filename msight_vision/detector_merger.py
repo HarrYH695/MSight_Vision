@@ -30,7 +30,6 @@ class MergedDetector(ImageDetector2DBase):
         super().__init__()
         self.detectors: List[ImageDetector2DBase] = []
         self.class_id_filters: List[Optional[Set[int]]] = []
-        self._detector_extra_params: List[Set[str]] = []
         seen_class_ids: Dict[int, str] = {}
 
         for det_cfg in model_config:
@@ -51,12 +50,6 @@ class MergedDetector(ImageDetector2DBase):
             detector = det_cls(**params)
             self.detectors.append(detector)
 
-            # Cache which extra kwargs this detector's detect() accepts
-            sig = inspect.signature(detector.detect)
-            base_params = {"self", "image", "timestamp", "sensor_type"}
-            extra = set(sig.parameters.keys()) - base_params
-            self._detector_extra_params.append(extra)
-
             # class_ids handling and conflict check
             raw_ids = det_cfg.get("class_ids", None)
             if raw_ids is None or raw_ids == "all":
@@ -74,13 +67,11 @@ class MergedDetector(ImageDetector2DBase):
                     seen_class_ids[cid] = det_type
                 self.class_id_filters.append(set(raw_ids))
 
-    def detect(self, image: ndarray, timestamp, sensor_type, **kwargs) -> DetectionResult2D:
+    def detect(self, image: ndarray, timestamp, sensor_type, sensor_name) -> DetectionResult2D:
         all_detected_objects = []
 
-        for detector, allowed_ids, extra_params in zip(self.detectors, self.class_id_filters, self._detector_extra_params):
-            # Filter kwargs to only include those accepted by this detector
-            filtered_kwargs = {k: v for k, v in kwargs.items() if k in extra_params}
-            result = detector.detect(image, timestamp, sensor_type, **filtered_kwargs)
+        for detector, allowed_ids in zip(self.detectors, self.class_id_filters):
+            result = detector.detect(image, timestamp, sensor_type, sensor_name)
 
             for obj in result.object_list:
                 if allowed_ids is None or obj.class_id in allowed_ids:
