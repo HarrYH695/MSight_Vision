@@ -21,4 +21,9 @@ def visualize_detection_result(image, detection_result, box_color=(0, 255, 0), t
             cv2.rectangle(image, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), box_color, 2)
             # put class_id and score
             cv2.putText(image, f"{class_id}:{score:.2f}", (int(box[0]), int(box[1]) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, text_color, 2)
+        
+        # draw bottom center point
+        pixel_bottom_center = obj.pixel_bottom_center
+        if pixel_bottom_center is not None:
+            cv2.circle(image, (int(pixel_bottom_center[0]), int(pixel_bottom_center[1])), 3, (0, 0, 255), -1)
     return image
