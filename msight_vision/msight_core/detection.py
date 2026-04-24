@@ -3,7 +3,7 @@ from msight_core.data import ImageData, DetectionResultsData
 import yaml
 from pathlib import Path
 import numpy as np
-from .. import YoloDetector, MergedDetector, HashLocalizer, ClassicWarperWithExternalUpdate
+from .. import MergedDetector, HashLocalizer, ClassicWarperWithExternalUpdate
 import torch
 import time
 from msight_core.utils import get_redis_client
