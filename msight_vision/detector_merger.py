@@ -73,7 +73,7 @@ class MergedDetector(ImageDetector2DBase):
         for detector, allowed_ids in zip(self.detectors, self.class_id_filters):
             result = detector.detect(image, timestamp, sensor_type, sensor_name)
 
-            for obj in result.object_list:
+            for obj in result:
                 if allowed_ids is None or obj.class_id in allowed_ids:
                     all_detected_objects.append(obj)
 

@@ -5,6 +5,7 @@ from .base import ImageDetector2DBase
 from ultralytics import YOLO
 from pathlib import Path
 from typing import Dict, List
+import cv2
 
 class YoloDetector(ImageDetector2DBase):
     """YOLOv5 detector for 2D images."""
@@ -22,7 +23,9 @@ class YoloDetector(ImageDetector2DBase):
         self.nmsthre = nmsthre
         self.fp16 = fp16
         self.class_agnostic_nms = class_agnostic_nms
-        self.mask = {key: np.load(item).astype(bool) for key, item in mask_path.items()} if mask_path is not None else None
+        self.mask = {
+            key: np.repeat((np.load(item).astype(bool).astype(np.uint8) * 255)[:, :, np.newaxis], 3, axis=2) for key, item in mask_path.items()
+        } if mask_path is not None else None
 
     def convert_yolo_result_to_detection_result(self, yolo_output_results, timestamp, sensor_type):
         """
@@ -54,13 +57,7 @@ class YoloDetector(ImageDetector2DBase):
             )
             detected_objects.append(detected_object)
         
-        detection_result = DetectionResult2D(
-            detected_objects,
-            timestamp,
-            sensor_type,
-        )
-        
-        return detection_result
+        return detected_objects
     
     def detect(self, image: ndarray, timestamp, sensor_type, sensor_name) -> DetectionResult2D:
         if self.mask is not None and sensor_name in self.mask:
@@ -69,7 +66,7 @@ class YoloDetector(ImageDetector2DBase):
                     f"Mask dimensions {self.mask[sensor_name].shape[:2]} do not match image dimensions {image.shape[:2]}"
                 )
             else:
-                image = image * self.mask[sensor_name][:, :, np.newaxis]
+                image = cv2.bitwise_and(image, self.mask[sensor_name])
         yolo_output_results = self.model(image, device=self.device, conf=self.confthre, iou=self.nmsthre, half=self.fp16, verbose=False, agnostic_nms=self.class_agnostic_nms)
         ## Convert results to DetectionResult2D
         detection_result = self.convert_yolo_result_to_detection_result(
@@ -92,7 +89,7 @@ class Yolo26Detector(YoloDetector):
                     f"Mask dimensions {self.mask[sensor_name].shape[:2]} do not match image dimensions {image.shape[:2]}"
                 )
             else:
-                image = image * self.mask[sensor_name][:, :, np.newaxis]
+                image = cv2.bitwise_and(image, self.mask[sensor_name])
         yolo_output_results = self.model(image, device=self.device, conf=self.confthre, iou=self.nmsthre, half=self.fp16, verbose=False, agnostic_nms=self.class_agnostic_nms, end2end=self.end2end)
         ## Convert results to DetectionResult2D
         detection_result = self.convert_yolo_result_to_detection_result(
@@ -138,13 +135,7 @@ class Yolo26OBBDetector(Yolo26Detector):
             )
             detected_objects.append(detected_object)
         
-        detection_result = DetectionResult2D(
-            detected_objects,
-            timestamp,
-            sensor_type,
-        )
-        
-        return detection_result
+        return detected_objects
 
 class Yolo26OBBPedestrianDetector(Yolo26OBBDetector):
     """YOLOv2.6 OBB pedestrian detector for 2D images."""
@@ -182,13 +173,7 @@ class Yolo26OBBPedestrianDetector(Yolo26OBBDetector):
             )
             detected_objects.append(detected_object)
         
-        detection_result = DetectionResult2D(
-            detected_objects,
-            timestamp,
-            sensor_type,
-        )
-        
-        return detection_result
+        return detected_objects
     
     def detect(self, image: ndarray, timestamp, sensor_type, sensor_name) -> DetectionResult2D:
         if self.mask is not None and sensor_name in self.mask:
@@ -197,7 +182,7 @@ class Yolo26OBBPedestrianDetector(Yolo26OBBDetector):
                     f"Mask dimensions {self.mask[sensor_name].shape[:2]} do not match image dimensions {image.shape[:2]}"
                 )
             else:
-                image = image * self.mask[sensor_name][:, :, np.newaxis]
+                image = cv2.bitwise_and(image, self.mask[sensor_name])
         yolo_output_results = self.model(image, device=self.device, conf=self.confthre, iou=self.nmsthre, half=self.fp16, verbose=False, agnostic_nms=self.class_agnostic_nms, end2end=self.end2end)
         ## Convert results to DetectionResult2D
         detection_result = self.convert_yolo_result_to_detection_result(
